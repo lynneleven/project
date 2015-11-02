@@ -1,0 +1,103 @@
+import csv
+import pandas as pd
+import numpy as np
+import pylab 
+import scipy.stats as stats
+import matplotlib.pyplot as plt
+from collections import defaultdict
+from datetime import datetime
+
+# def count_num(name):
+#     num_count = defaultdict(int)
+#     with open('Crimes_2001_to_present.csv') as csvfile:
+#         reader = csv.DictReader(csvfile)
+#         for row in reader:
+#             if row[name] in num_count.keys():
+#                 num_count[row[name]] += 1
+#             else:
+#                 num_count[row[name]] = 1
+#     return num_count
+
+# primary_type_library = count('Primary Type')
+
+df = pd.read_csv('Crimes_2001_to_present.csv', parse_dates=True)
+hardship = pd.read_csv('Census_Data_Selected_socioeconomic_indicators_in_Chicago_2008_2012.csv')
+
+crime_freq = count_num('Community Area')
+
+hardship.columns
+hardship.columns = ['Community_Area_Number', 'COMMUNITY_AREA_NAME', 'PERCENT_OF_HOUSING_CROWDED','PERCENT_HOUSEHOLDS_BELOW_POVERTY','PERCENT_AGED_16_UNEMPLOYED','PERCENT_AGED_25_WITHOUT_HIGH_SCHOOL_DIPLOMA','PERCENT_AGED_UNDER_18_OR_OVER_64','PER_CAPITA_INCOME','HARDSHIP_INDEX']
+
+phc = hardship.PERCENT_OF_HOUSING_CROWDED
+stats.probplot(phc, dist="norm", plot=pylab)
+pylab.show()
+##not normal. use log transformation
+
+logphc = np.log(phc)
+stats.probplot(logphc, dist="norm", plot=pylab)
+pylab.show()
+##nearly normal
+
+
+crime_freq.pop("", "0")
+crime_freq_list = zip(crime_freq.values(), crime_freq.keys())
+sort(crime_freq_list)
+
+crimetype = df.groupby('Primary Type')
+crimetype.size()
+
+##choose one specific crime type
+battery = crimetype.get_group('BATTERY')
+battery_area = battery.groupby('Community Area').size()
+battery_area2 = battery_area.pop("0")
+battery_area2.median()
+
+Y1 = 8460 >= battery_area2
+Y = Y1.astype(int)
+
+HI = hardship.HARDSHIP_INDEX
+stats.probplot(HI, dist="norm", plot=pylab)
+pylab.show()
+sqrtHI = np.sqrt(HI)
+stats.probplot(sqrtHI, dist="norm", plot=pylab)
+pylab.show()
+
+X = sqrtHI.drop([77]).reset_index().ix[:,1]
+
+##TSA of homicide incidents
+import statsmodels.api as sm
+homicide = crimetype.get_group('HOMICIDE')
+homicide_year = homicide.groupby('Year').size()
+homicideTSA = homicide_year.values
+##center the data
+tsa = homicideTSA - homicideTSA.mean()
+tsa2 = pd.DataFrame(tsa)
+tsa2.index = pd.Index(sm.tsa.datetools.dates_from_range('2001', '2015'))
+fig = plt.figure(figsize=(12,8))
+fig = sm.graphics.tsa.plot_acf(tsa2.values.squeeze())
+pylab.show()
+fig = sm.graphics.tsa.plot_pacf(tsa2)
+pylab.show()
+
+plot_pacf(tsa2)
+pyplot.show()
+plot_acf(tsa2)
+pyplot.show()
+
+##guess AR(2) or AR(3)
+arma_mod30 = sm.tsa.ARMA(tsa2,(3,0)).fit()
+arma_mod20 = sm.tsa.ARMA(tsa2,(2,0)).fit()
+
+print arma_mod20.aic, arma_mod20.bic, arma_mod30.aic, arma_mod30.bic
+#172.303273517 175.135474321 174.039992356 177.58024336
+#AR(2)
+sm.stats.durbin_watson(arma_mod20.resid.values)
+#1.648487549887713
+fig = plt.figure(figsize=(12,8))
+
+arma_mod20.resid.plot()
+pylab.show()
+
+resid = arma_mod20.resid
+stats.probplot(resid, dist="norm", plot=pylab)
+pylab.show()
